@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ChatSystem – System Monitor</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#14161a;--mut:#6b7280;--line:#e5e7eb;--ok:#16a34a;--bad:#dc2626;--acc:#2563eb}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#181b21;--fg:#e8eaee;--mut:#9aa1ad;--line:#2a2f38;--acc:#60a5fa}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px system-ui,sans-serif;padding:20px}
+h1{font-size:20px;margin:0 0 16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
+.card .l{color:var(--mut);font-size:12px}.card .v{font-size:28px;font-weight:600;margin-top:4px}
+.ok{color:var(--ok)}.bad{color:var(--bad)}
+.row{display:flex;gap:12px;flex-wrap:wrap}.row>.card{flex:1 1 320px}
+button{background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:7px 12px;cursor:pointer;margin-right:6px}
+button.on{border-color:var(--acc);color:var(--acc);font-weight:600}
+#log{max-height:420px;overflow:auto;font-size:13px}
+.ev{padding:7px 0;border-bottom:1px solid var(--line)}.ev b{color:var(--acc)}.ev small{color:var(--mut);display:block}
+</style></head><body>
+<h1>ChatSystem – System Monitor <span id="live" class="ok">● live</span></h1>
+<div class="grid">
+ <div class="card"><div class="l">Online users</div><div class="v" id="on">–</div><div class="l" id="names"></div></div>
+ <div class="card"><div class="l">WebSocket connections</div><div class="v" id="ws">–</div></div>
+ <div class="card"><div class="l">Total messages</div><div class="v" id="msg">–</div></div>
+ <div class="card"><div class="l">Pending sync</div><div class="v" id="pend">–</div></div>
+ <div class="card"><div class="l">Redis</div><div class="v" id="redis">–</div></div>
+ <div class="card"><div class="l">PostgreSQL</div><div class="v" id="pg">–</div></div>
+</div>
+<div class="row">
+ <div class="card"><div class="l">Heartbeat (áp dụng ngay cho mọi thiết bị)</div>
+  <p id="hb" style="font-size:18px;font-weight:600"></p>
+  <button data-p="demo">Demo 5s/15s</button><button data-p="balanced">Cân bằng 15s/45s</button><button data-p="battery">Tiết kiệm 30s/90s</button></div>
+ <div class="card"><div class="l">Event Log (sự kiện thật từ backend)</div><div id="log"></div></div>
+</div>
+<script>
+const $=id=>document.getElementById(id);let last=0,cur="";
+const time=ts=>new Date(ts*1000).toLocaleTimeString("vi-VN");
+const flag=(el,ok)=>{el.textContent=ok?"Connected":"Down";el.className="v "+(ok?"ok":"bad")};
+async function tick(){
+ try{
+  const s=await (await fetch("/api/monitor/stats/")).json();
+  $("on").textContent=s.online_users.length;$("names").textContent=s.online_users.join(", ");
+  $("ws").textContent=s.ws_connections;$("msg").textContent=s.total_messages;$("pend").textContent=s.pending_sync;
+  flag($("redis"),s.redis);flag($("pg"),s.postgres);
+  $("hb").textContent=`interval ${s.heartbeat.interval}s · timeout ${s.heartbeat.timeout}s`;
+  cur=`${s.heartbeat.interval}/${s.heartbeat.timeout}`;
+  document.querySelectorAll("button").forEach(b=>b.classList.toggle("on",{demo:"5/15",balanced:"15/45",battery:"30/90"}[b.dataset.p]===cur));
+  const ev=await (await fetch("/api/monitor/events/?since="+last)).json();
+  ev.forEach(e=>{last=Math.max(last,e.id);const d=document.createElement("div");d.className="ev";
+   d.innerHTML=`${time(e.ts)} – <b></b><small></small>`;d.querySelector("b").textContent=e.step;d.querySelector("small").textContent=e.detail;
+   $("log").prepend(d)});
+  $("live").textContent="● live";$("live").className="ok";
+ }catch(e){$("live").textContent="● mất kết nối server";$("live").className="bad"}
+}
+document.querySelectorAll("button").forEach(b=>b.onclick=()=>fetch("/api/presence/config/",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({preset:b.dataset.p})}).then(tick));
+tick();setInterval(tick,1000);
+</script></body></html>
